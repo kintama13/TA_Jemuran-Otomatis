@@ -40,6 +40,7 @@ int lastStatusKering = -1;
 Preferences preferences;
 int nilaiBlynk = 0;
 int posisiMotor = 0;
+bool motorSedangBergerak = false;
 int statusKelembapan1 = 0;
 int statusKelembapan2 = 0;
 int presentase1 = 0;
@@ -51,16 +52,6 @@ void cekSensorHujan() {
   int statusHujan = digitalRead(SENSOR_HUJAN_DO_PIN);
   nilaiBlynk = (statusHujan == LOW) ? 1 : 0;
   Blynk.virtualWrite(V0, nilaiBlynk);
-
-  // if (nilaiBlynk == 1) {
-  //   lcd.setCursor(0, 0);
-  //   lcd.print("Status: Hujan");
-  //   menarikJemuran();
-  // } else {
-  //   lcd.setCursor(0, 0);
-  //   lcd.print("Status: Cerah");
-  //   mengeluarkanJemuran();
-  // }
 
   // Mengirim Notifikasi Pada Aplikasi BLYNK
   if (nilaiBlynk != lastStatus) {
@@ -78,9 +69,8 @@ void cekSensorHujan() {
 // kalibrasi sensor kelembapan
 int kalibrasiSensor(int x) {
   if(x >= 3000 && x <= 4095) {
-    return 0;
+    return x = 0;
   }
-
   float rumus = 4.67e-05 * (x * x) - 0.3294 * x + 568.3112;
   return round(constrain(rumus, 0, 100));
 }
@@ -109,14 +99,17 @@ void cekSensorKelembapan() {
 
 // Fungsi Menarik Jemuran
 void menarikJemuran() {
+  if(motorSedangBergerak) return;
+  motorSedangBergerak = true;
+
   motor1.setMaxSpeed(1000);
   motor2.setMaxSpeed(1000);
   motor1.setAcceleration(600);
   motor2.setAcceleration(600);
 
-  // 10 Kali Putaran
-  motor1.moveTo(-2048 * 10);
-  motor2.moveTo(2048 * 10);
+  // 12 Kali Putaran
+  motor1.moveTo(-2048 * 12);
+  motor2.moveTo(2048 * 12);
 
   while(motor1.distanceToGo() !=0 || motor2.distanceToGo() !=0) {
     motor1.run();
@@ -128,46 +121,53 @@ void menarikJemuran() {
   preferences.end();
 
   posisiMotor = 1;
+  motorSedangBergerak = false;
 }
 
 // Fungsi Mengeluarkan Jemuran
 void mengeluarkanJemuran() {
+  if(motorSedangBergerak) return;
+  motorSedangBergerak = true;
+
   motor1.setMaxSpeed(1000);
   motor2.setMaxSpeed(1000);
   motor1.setAcceleration(600);
   motor2.setAcceleration(600);
 
-  // 10 Kali Putaran
-  motor1.moveTo(2048 * 10);
-  motor2.moveTo(-2048 * 10);
+  // 12 Kali Putaran
+  motor1.moveTo(2048 * 12);
+  motor2.moveTo(-2048 * 12);
 
   while(motor1.distanceToGo() !=0 || motor2.distanceToGo() !=0) {
     motor1.run();
     motor2.run();
   }
 
-  preferences.begin("jemuran", true);
+  preferences.begin("jemuran", false);
   preferences.putInt("posisi", 0);
   preferences.end();
 
   posisiMotor = 0;
+  motorSedangBergerak = false;
 }
 
 // Rule base
 void ruleBasedSystem(){
-  if (presentase < 25) {
+  if (motorSedangBergerak) return; 
+
+  if (presentase < 25 && posisiMotor == 0) {
     menarikJemuran();
 
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Pakaian Kering ");
-  }else if (nilaiBlynk == 1){
+  }else if (nilaiBlynk == 1 && posisiMotor == 0){
     menarikJemuran();
 
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Status : Hujan");
-  }else{
+  }else if (nilaiBlynk == 0 && presentase >= 25 && posisiMotor == 1){
     mengeluarkanJemuran();
 
     lcd.clear();
@@ -180,10 +180,17 @@ void setup() {
   Serial.begin(115200);
   lcd.begin(16, 2);
   lcd.setBacklight(255);
+
+  preferences.begin("jemuran", true);
+  posisiMotor = preferences.getInt("posisi", 0);
+  preferences.end();
+
   Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
   pinMode(SENSOR_HUJAN_DO_PIN, INPUT);
   pinMode(SENSOR_KELEMBAPAN_PIN1, INPUT);
   pinMode(SENSOR_KELEMBAPAN_PIN2, INPUT);
+
   timer.setInterval(1000L, cekSensorHujan);
   timer.setInterval(2000L, cekSensorKelembapan);
   timer.setInterval(1500L, ruleBasedSystem);
